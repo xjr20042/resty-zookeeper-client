@@ -62,10 +62,8 @@ function _M.connect(self, host)
                 return nil, err
             end
         end
-    else
-        print("read error :" .. err)
     end
-    return nil
+    return nil, "recv head error"
 end
 
 local function unpack_strings(str)
@@ -75,7 +73,7 @@ local function unpack_strings(str)
     local index = 1
     while size > pos do
         local len = unpack(">i", strsub(str, 1+pos, 4+pos))        
-        local s = unpack(">c" .. len, strsub(str, 5+pos, 5+pos+len))
+        local s = unpack(">c" .. len, strsub(str, 5+pos, 5+pos+len-1))
         str_set[index] = s
         index = index + 1
         pos = pos + len + 4
@@ -87,14 +85,14 @@ function _M.get_children(self, path)
     local sock = self.sock
     if not sock then
         --print("not connected")
-        return nil
+        return nil, "not initialized"
     end
     local sn = self.sn + 1
     local req = pack(">iiiic" .. strlen(path) .. "b", 12+strlen(path)+1, sn, 8, strlen(path), path, strbyte(0))
     local bytes, err = sock:send(req)
     if not bytes then
         --print(err)
-        return nil
+        return nil, "send error"
     end
     local res, err = sock:receive(4)
     if res then
@@ -106,10 +104,11 @@ function _M.get_children(self, path)
                 self.sn = sn+1
                 return unpack_strings(strsub(res, 21)) 
             else
-                return nil
+                return nil, "recv error"
             end
         end
     end
+    return nil, "recv head error"
 end
 
 function _M.get_data(self, path)
@@ -134,13 +133,21 @@ function _M.get_data(self, path)
                 local sn, zxid, err, len = unpack(">ilii", res)
                 self.sn = sn+1
                 --print(len)
-                return strsub(res, 21, 21+len)
+                return strsub(res, 21, 21+len-1)
             else
-                return nil
+                return nil, "recv error"
             end
         end
     end
-    return nil
+    return nil, "recv head error"
+end
+
+function _M.close(self)
+    local sock = self.sock
+    if not sock then
+        return nil, "not initialized"
+    end
+    return sock:close()
 end
 
 return _M
