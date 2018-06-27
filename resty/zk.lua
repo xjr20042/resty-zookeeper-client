@@ -9,8 +9,46 @@ local unpack = struct.unpack
 local strlen = string.len
 local strsub = string.sub
 local strbyte = string.byte
+local bit = require "bit"
+local bor = bit.bor
 
-local _M = {_VERSION = '0.01'}
+--constants
+
+--error info
+local ZNODEEXISTS = -110
+
+--xids
+local WATCHER_EVENT_XID = -1 
+local PING_XID = -2
+local AUTH_XID = -4
+local SET_WATCHES_XID = -8
+-- ops
+local ZOO_NOTIFY_OP = 0
+local ZOO_CREATE_OP = 1
+local ZOO_DELETE_OP = 2
+local ZOO_EXISTS_OP = 3
+local ZOO_GETDATA_OP = 4
+local ZOO_SETDATA_OP = 5
+local ZOO_GETACL_OP = 6
+local ZOO_SETACL_OP = 7
+local ZOO_GETCHILDREN_OP = 8
+local ZOO_SYNC_OP = 9
+local ZOO_PING_OP = 11
+local ZOO_GETCHILDREN2_OP = 12
+local ZOO_CHECK_OP = 13
+local ZOO_MULTI_OP = 14
+local ZOO_CLOSE_OP = -11
+local ZOO_SETAUTH_OP = 100
+local ZOO_SETWATCHES_OP = 101
+--
+local ZOO_EPHEMERAL = 1
+local ZOO_SEQUENCE = 2
+
+local _M = {
+    _VERSION = '0.01',
+    EPHEMERAL = ZOO_EPHEMERAL,
+    SEQUENCE = ZOO_SEQUENCE,
+}
 
 local mt = { __index = _M }
 
@@ -88,7 +126,7 @@ function _M.get_children(self, path)
         return nil, "not initialized"
     end
     local sn = self.sn + 1
-    local req = pack(">iiiic" .. strlen(path) .. "b", 12+strlen(path)+1, sn, 8, strlen(path), path, strbyte(0))
+    local req = pack(">iiiic" .. strlen(path) .. "b", 12+strlen(path)+1, sn, ZOO_GETCHILDREN_OP, strlen(path), path, strbyte(0))
     local bytes, err = sock:send(req)
     if not bytes then
         --print(err)
@@ -118,7 +156,7 @@ function _M.get_data(self, path)
         return nil, "not initialized"
     end
     local sn = self.sn + 1
-    local req = pack(">iiiic" .. strlen(path) .. "b", 12+strlen(path)+1, sn, 4, strlen(path), path, strbyte(0))
+    local req = pack(">iiiic" .. strlen(path) .. "b", 12+strlen(path)+1, sn, ZOO_GETDATA_OP, strlen(path), path, strbyte(0))
     local bytes, err = sock:send(req)
     if not bytes then
         --print(err)
@@ -140,6 +178,91 @@ function _M.get_data(self, path)
         end
     end
     return nil, "recv head error"
+end
+
+function _M.create(self, path, data, opt)
+    local sock = self.sock
+    if not sock then
+        --print("not connected")
+        return nil, "not initialized"
+    end
+    local sn = self.sn + 1
+    local pathlen = strlen(path)
+    if not data or strlen(data) == 0 then
+        data = " "
+    end
+    local datalen = strlen(data)
+    
+    local acl_scheme = "world"
+    local acl_id = "anyone"
+    local scheme_len = strlen(acl_scheme)
+    local id_len = strlen(acl_id)
+    local flag = 0
+    if opt and opt[ZOO_EPHEMERAL] then
+        flag = bor(flag, ZOO_EPHEMERAL)
+    end
+    if opt and opt[ZOO_SEQUENCE] then
+        flag = bor(flag, ZOO_SEQUENCE)
+    end
+    local req = pack(">iiic" .. pathlen .. "ic" .. datalen .. "iiic" .. scheme_len .. "ic" .. id_len .. "i",
+                    sn, ZOO_CREATE_OP, pathlen, path, datalen, data,
+                    1, 0x1f, scheme_len, acl_scheme, id_len, acl_id, flag)
+    req = pack(">ic" .. strlen(req), strlen(req), req)
+    local bytes, err = sock:send(req)
+    if not bytes then
+        --print(err)
+        return nil, err
+    end
+    local res, err = sock:receive(4)
+    if res then
+        local len = unpack(">i", res)
+        if len then
+            res, err = sock:receive(len)
+            if strlen(res) >= 16 then
+                local sn, zxid, err = unpack(">ili", res)
+                self.sn = sn+1
+                if err == 0 then
+                    len = unpack(">i", strsub(res, 17, 17+3))
+                    return true, strsub(res, 21, 21+len-1)
+                else
+                    if err == ZNODEEXISTS then
+                        err = "node exists"
+                    end
+                    return false, err
+                end
+            else
+                return nil, "recv error"
+            end
+        end
+    end
+    return nil, "recv head error"
+end
+
+function _M.ping(self)
+    local sock = self.sock
+    local req = pack(">iII", 8, PING_XID, ZOO_PING_OP)
+    if not sock then
+        return nil, "not initialized"
+    end
+    local bytes, err = sock:send(req)
+    if not bytes then
+        print(err)
+        return nil, err
+    end
+    local res, err = sock:receive(4)
+    if res then
+        local len = unpack(">i", res)
+        if len then
+            res, err = sock:receive(len)
+            local xid = unpack(">i", strsub(res, 1, 1+3))
+            if xid == PING_XID then
+                print("recv pong")
+            else
+                print("recv unknow response")
+            end
+        end
+    end
+    return bytes
 end
 
 function _M.close(self)
