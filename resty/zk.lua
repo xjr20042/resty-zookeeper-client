@@ -44,6 +44,9 @@ local ZOO_SETWATCHES_OP = 101
 local ZOO_EPHEMERAL = 1
 local ZOO_SEQUENCE = 2
 
+--
+local ZNONODE = -101
+
 local _M = {
     _VERSION = '0.01',
     EPHEMERAL = ZOO_EPHEMERAL,
@@ -95,6 +98,7 @@ function _M.connect(self, host)
             if res then
                 local v, t, sid, pl,p = unpack(">iilis", res)
                 self.sn = 0
+                self.session_timeout = t
                 return true
             else
                 return nil, err
@@ -126,7 +130,8 @@ function _M.get_children(self, path)
         return nil, "not initialized"
     end
     local sn = self.sn + 1
-    local req = pack(">iiiic" .. strlen(path) .. "b", 12+strlen(path)+1, sn, ZOO_GETCHILDREN_OP, strlen(path), path, strbyte(0))
+    local pathlen = strlen(path)
+    local req = pack(">iiiic" .. pathlen .. "b", 12+pathlen+1, sn, ZOO_GETCHILDREN_OP, pathlen, path, strbyte(0))
     local bytes, err = sock:send(req)
     if not bytes then
         --print(err)
@@ -156,7 +161,8 @@ function _M.get_data(self, path)
         return nil, "not initialized"
     end
     local sn = self.sn + 1
-    local req = pack(">iiiic" .. strlen(path) .. "b", 12+strlen(path)+1, sn, ZOO_GETDATA_OP, strlen(path), path, strbyte(0))
+    local pathlen = strlen(path)
+    local req = pack(">iiiic" .. pathlen .. "b", 12+pathlen+1, sn, ZOO_GETDATA_OP, pathlen, path, strbyte(0))
     local bytes, err = sock:send(req)
     if not bytes then
         --print(err)
@@ -263,6 +269,46 @@ function _M.ping(self)
         end
     end
     return bytes
+end
+
+function _M.exist(self, path)
+    local sock = self.sock
+    if not sock then
+        --print("not connected")
+        return nil, "not initialized"
+    end
+    local sn = self.sn + 1
+    local pathlen = strlen(path)
+    local req = pack(">iiiic" .. pathlen .. "b", 12+pathlen+1, sn, ZOO_EXISTS_OP, pathlen, path, strbyte(0))
+    local bytes, err = sock:send(req)
+    if not bytes then
+        --print(err)
+        return nil, err
+    end
+    local res, err = sock:receive(4)
+    if res then
+        local len = unpack(">i", res)
+        if len then
+            res, err = sock:receive(len)
+            if strlen(res) >= 16 then
+                local sn, zxid, err = unpack(">ili", res)
+                self.sn = sn+1
+                if err == ZNONODE then
+                    return false, "not exist"
+                elseif err == 0 then
+                    return true
+                end
+            else
+                return nil, "recv error"
+            end
+        end
+    end
+    return nil, "recv head error"
+end
+
+function _M.get_pinginterval(self)
+    --change to seconds
+    return (self.session_timeout/3)/1000
 end
 
 function _M.close(self)
