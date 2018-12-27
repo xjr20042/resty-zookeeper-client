@@ -11,7 +11,9 @@ local strsub = string.sub
 local strbyte = string.byte
 local bit = require "bit"
 local bor = bit.bor
-
+local exiting = ngx.worker.exiting
+local sleep = ngx.sleep
+local now = ngx.now
 --constants
 
 --error info
@@ -22,6 +24,7 @@ local WATCHER_EVENT_XID = -1
 local PING_XID = -2
 local AUTH_XID = -4
 local SET_WATCHES_XID = -8
+local CLOSE_XID = -9
 -- ops
 local ZOO_NOTIFY_OP = 0
 local ZOO_CREATE_OP = 1
@@ -76,18 +79,15 @@ function _M.connect(self, host)
     local sock = self.sock
     local req = pack(">iililic16", 44, 0, 0, 0, 0, 0, "")
     if not sock then
-        print(err)
         return nil, "not initialized"
     end
 
     local ok, err = sock:connect(host)
     if not ok then
-        print(err)
         return nil, err
     end
     local bytes, err = sock:send(req)
     if not bytes then
-        print(err)
         return nil, err
     end
     local res, err = sock:receive(4)
@@ -126,7 +126,6 @@ end
 function _M.get_children(self, path)
     local sock = self.sock
     if not sock then
-        --print("not connected")
         return nil, "not initialized"
     end
     local sn = self.sn + 1
@@ -134,7 +133,6 @@ function _M.get_children(self, path)
     local req = pack(">iiiic" .. pathlen .. "b", 12+pathlen+1, sn, ZOO_GETCHILDREN_OP, pathlen, path, strbyte(0))
     local bytes, err = sock:send(req)
     if not bytes then
-        --print(err)
         return nil, "send error"
     end
     local res, err = sock:receive(4)
@@ -157,7 +155,6 @@ end
 function _M.get_data(self, path)
     local sock = self.sock
     if not sock then
-        --print("not connected")
         return nil, "not initialized"
     end
     local sn = self.sn + 1
@@ -165,7 +162,6 @@ function _M.get_data(self, path)
     local req = pack(">iiiic" .. pathlen .. "b", 12+pathlen+1, sn, ZOO_GETDATA_OP, pathlen, path, strbyte(0))
     local bytes, err = sock:send(req)
     if not bytes then
-        --print(err)
         return nil, err
     end
     local res, err = sock:receive(4)
@@ -176,7 +172,6 @@ function _M.get_data(self, path)
             if strlen(res) > 16 then
                 local sn, zxid, err, len = unpack(">ilii", res)
                 self.sn = sn+1
-                --print(len)
                 return strsub(res, 21, 21+len-1)
             else
                 return nil, "recv error"
@@ -189,7 +184,6 @@ end
 function _M.create(self, path, data, opt)
     local sock = self.sock
     if not sock then
-        --print("not connected")
         return nil, "not initialized"
     end
     local sn = self.sn + 1
@@ -216,7 +210,6 @@ function _M.create(self, path, data, opt)
     req = pack(">ic" .. strlen(req), strlen(req), req)
     local bytes, err = sock:send(req)
     if not bytes then
-        --print(err)
         return nil, err
     end
     local res, err = sock:receive(4)
@@ -252,7 +245,6 @@ function _M.ping(self)
     end
     local bytes, err = sock:send(req)
     if not bytes then
-        print(err)
         return nil, err
     end
     local res, err = sock:receive(4)
@@ -262,19 +254,18 @@ function _M.ping(self)
             res, err = sock:receive(len)
             local xid = unpack(">i", strsub(res, 1, 1+3))
             if xid == PING_XID then
-                print("recv pong")
+                return true
             else
-                print("recv unknow response")
+                err = "unknow reponse"
             end
         end
     end
-    return bytes
+    return nil, err
 end
 
 function _M.exist(self, path)
     local sock = self.sock
     if not sock then
-        --print("not connected")
         return nil, "not initialized"
     end
     local sn = self.sn + 1
@@ -282,7 +273,6 @@ function _M.exist(self, path)
     local req = pack(">iiiic" .. pathlen .. "b", 12+pathlen+1, sn, ZOO_EXISTS_OP, pathlen, path, strbyte(0))
     local bytes, err = sock:send(req)
     if not bytes then
-        --print(err)
         return nil, err
     end
     local res, err = sock:receive(4)
@@ -311,6 +301,26 @@ function _M.get_pinginterval(self)
     return (self.session_timeout/3)/1000
 end
 
+function _M.loop_keepalive(self)
+    local sleep_period = 0.1
+    local last_send_time = 0
+    while true do
+        if exiting() then
+            self:closesession()
+            self:close()
+            return true
+        end
+        if now() - last_send_time > self:get_pinginterval() then
+            local ok, err = self:ping()
+            if not ok then
+                return nil, err
+            end
+            last_send_time = now()
+        end
+        sleep(sleep_period)
+    end
+end
+
 function _M.close(self)
     local sock = self.sock
     if not sock then
@@ -319,5 +329,33 @@ function _M.close(self)
     return sock:close()
 end
 
+function _M.closesession(self)
+    local sock = self.sock
+    local req = pack(">iII", 8, CLOSE_XID, ZOO_CLOSE_OP)
+    if not sock then
+        return nil, "not initialized"
+    end
+    local bytes, err = sock:send(req)
+    if not bytes then
+        print(err)
+        return nil, err
+    end
+    local res, err = sock:receive(4)
+    if res then
+        local len = unpack(">i", res)
+        if len then
+            res, err = sock:receive(len)
+            local xid = unpack(">i", strsub(res, 1, 1+3))
+            if xid == CLOSE_XID then
+                print("recv close response")
+            else
+                print("recv unknow response")
+            end
+        end
+    else
+        return nil, err
+    end
+    return bytes
+end
 return _M
 
