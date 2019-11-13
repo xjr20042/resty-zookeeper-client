@@ -1,10 +1,14 @@
 -- Author AlbertXiao
 
-local zk = require "zk"
+local zk = require "resty/zookeeper/zk"
+
 local tablen = table.getn
 local strsub = string.sub
 local now = ngx.now
 local sleep = ngx.sleep
+local log = ngx.log
+local DEBUG = ngx.DEBUG
+local ERR = ngx.ERR
 
 local _M = { __version = "0.01" }
 
@@ -18,11 +22,15 @@ function _M.new(self, config)
         self.child_cache = {}
         self.data_cache = {}
         self.inited = true
-        --print('initt.....')
+        log(DEBUG, "initt......")
     end
     local timeout = config.timeout or 1000
     local expire = config.expire or 1
-    return setmetatable({serv_list=config.serv_list, timeout=timeout, expire=expire}, mt)
+    return setmetatable({
+        serv_list=config.serv_list,
+        timeout=timeout,
+        expire=expire
+    }, mt)
 end
 
 function _M._get_host(self)
@@ -39,7 +47,7 @@ function _M._connect(self)
         local host = self:_get_host()
         local ok, err = conn:connect(host)
         if not ok then
-            print("connect " .. host .. " error:" ..err)
+            log(ERR, "connect ", host, " error ", err)
         else
             self.conn = conn
             return conn
@@ -48,7 +56,7 @@ function _M._connect(self)
     return nil
 end
 
-function _M._common_get(self, path, get_type, user_cache)
+function _M._common_get(self, path, get_type, use_cache)
     local use_cache = use_cache or true
     local expire = self.expire
     local cache = nil
@@ -70,14 +78,14 @@ function _M._common_get(self, path, get_type, user_cache)
         if c then
             local value = c['v']
             if now() - c['expire'] < expire then
-                --print('hit cache')
+                log(DEBUG, "hit cache")
                 return value
             else
                 if getting then
-                    --print('already getting, use stale cache')
+                    log(DEBUG, "already getting, use stale cache")
                     return value
                 else
-                    --print('cache expired, freshing')
+                    log(DEBUG, "cache expired, freshing")
                     getting_state[path] = true
                     if get_type == 'child' then
                         res, err = self:_get_children(path)
@@ -94,12 +102,12 @@ function _M._common_get(self, path, get_type, user_cache)
             end
         else
             if getting then
-                --print('already getting, sleep 1 seconds')
+                log(DEBUG, "already getting, sleep 1 seconds")
                 sleep(1)
                 c = cache[path]
                 return c['v']
             else
-                --print('first get')
+                log(DEBUG, "first get")
                 getting_state[path] = true
                 if get_type == 'child' then
                     res, err = self:_get_children(path)

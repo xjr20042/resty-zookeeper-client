@@ -1,7 +1,6 @@
 -- Author AlbertXiao
 
-
-local struct = require "struct"
+local struct = require "resty/zookeeper/struct"
 
 local tcp = ngx.socket.tcp
 local pack = struct.pack
@@ -14,6 +13,9 @@ local bor = bit.bor
 local exiting = ngx.worker.exiting
 local sleep = ngx.sleep
 local now = ngx.now
+local log = ngx.log
+local DEBUG = ngx.DEBUG
+local ERR = ngx.ERR
 --constants
 
 --error info
@@ -130,7 +132,8 @@ function _M.get_children(self, path)
     end
     local sn = self.sn + 1
     local pathlen = strlen(path)
-    local req = pack(">iiiic" .. pathlen .. "b", 12+pathlen+1, sn, ZOO_GETCHILDREN_OP, pathlen, path, strbyte(0))
+    local req = pack(">iiiic" .. pathlen .. "b", 12+pathlen+1, sn,
+                     ZOO_GETCHILDREN_OP, pathlen, path, strbyte(0))
     local bytes, err = sock:send(req)
     if not bytes then
         return nil, "send error"
@@ -159,7 +162,8 @@ function _M.get_data(self, path)
     end
     local sn = self.sn + 1
     local pathlen = strlen(path)
-    local req = pack(">iiiic" .. pathlen .. "b", 12+pathlen+1, sn, ZOO_GETDATA_OP, pathlen, path, strbyte(0))
+    local req = pack(">iiiic" .. pathlen .. "b", 12+pathlen+1, sn,
+                     ZOO_GETDATA_OP, pathlen, path, strbyte(0))
     local bytes, err = sock:send(req)
     if not bytes then
         return nil, err
@@ -204,9 +208,10 @@ function _M.create(self, path, data, opt)
     if opt and opt[ZOO_SEQUENCE] then
         flag = bor(flag, ZOO_SEQUENCE)
     end
-    local req = pack(">iiic" .. pathlen .. "ic" .. datalen .. "iiic" .. scheme_len .. "ic" .. id_len .. "i",
-                    sn, ZOO_CREATE_OP, pathlen, path, datalen, data,
-                    1, 0x1f, scheme_len, acl_scheme, id_len, acl_id, flag)
+    local req = pack(">iiic" .. pathlen .. "ic" .. datalen .. "iiic"
+                     .. scheme_len .. "ic" .. id_len .. "i",
+                     sn, ZOO_CREATE_OP, pathlen, path, datalen, data,
+                     1, 0x1f, scheme_len, acl_scheme, id_len, acl_id, flag)
     req = pack(">ic" .. strlen(req), strlen(req), req)
     local bytes, err = sock:send(req)
     if not bytes then
@@ -227,7 +232,7 @@ function _M.create(self, path, data, opt)
                     if err == ZNODEEXISTS then
                         err = "node exists"
                     end
-                    return false, err
+                    return nil, err
                 end
             else
                 return nil, "recv error"
@@ -270,7 +275,8 @@ function _M.exist(self, path)
     end
     local sn = self.sn + 1
     local pathlen = strlen(path)
-    local req = pack(">iiiic" .. pathlen .. "b", 12+pathlen+1, sn, ZOO_EXISTS_OP, pathlen, path, strbyte(0))
+    local req = pack(">iiiic" .. pathlen .. "b", 12+pathlen+1, sn,
+                     ZOO_EXISTS_OP, pathlen, path, strbyte(0))
     local bytes, err = sock:send(req)
     if not bytes then
         return nil, err
@@ -284,7 +290,7 @@ function _M.exist(self, path)
                 local sn, zxid, err = unpack(">ili", res)
                 self.sn = sn+1
                 if err == ZNONODE then
-                    return false, "not exist"
+                    return nil, "not exist"
                 elseif err == 0 then
                     return true
                 end
@@ -337,7 +343,7 @@ function _M.closesession(self)
     end
     local bytes, err = sock:send(req)
     if not bytes then
-        print(err)
+        log(ERR, "send bytes failed, ", err)
         return nil, err
     end
     local res, err = sock:receive(4)
@@ -347,9 +353,9 @@ function _M.closesession(self)
             res, err = sock:receive(len)
             local xid = unpack(">i", strsub(res, 1, 1+3))
             if xid == CLOSE_XID then
-                print("recv close response")
+                log(DEBUG, "recv close response")
             else
-                print("recv unknow response")
+                log(ERR, "recv unknow response")
             end
         end
     else
