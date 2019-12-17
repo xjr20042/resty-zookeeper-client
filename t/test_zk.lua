@@ -1,6 +1,6 @@
 local cjson = require "cjson"
 local zk = require "zk_cluster"
-
+-- zk_cluster.lua is complex, please use zk.lua
 local config = {
     serv_list = {
         "127.0.0.1:2181",

@@ -25,14 +25,7 @@ local function run()
         print(err)
         return
     end
-    while true do
-        ok, err = zkc:ping()
-        if not ok then
-            print(err)
-            return
-        end
-        sleep(zkc:get_pinginterval())
-    end
+    zk::loop_keepalive()
 end
     
 local function loop()
