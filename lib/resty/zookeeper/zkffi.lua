@@ -107,10 +107,13 @@ end
 function _M.connect(self, host, port)
     local sock = self.sock
 
-    local req = set_byte4(44) .. set_byte4(0)
-        .. set_byte8(0) .. set_byte4(0)
-        .. set_byte8(0) .. set_byte4(0)
-        .. strrep('\0', 16)
+    local req = set_byte4(44)
+                .. set_byte4(0)
+                .. set_byte8(0)
+                .. set_byte4(0)
+                .. set_byte8(0)
+                .. set_byte4(0)
+                .. strrep('\0', 16)
     if not sock then
         return nil, "not initialized"
     end
@@ -151,7 +154,7 @@ local function unpack_strings(str)
     local str_set = {}
     local index = 1
     while size > pos do
-        local len = get_byte4(strsub(str, 1+pos, 4+pos), 1)
+        local len = get_byte4(str, 1+pos)
         local s = strsub(str, 5+pos, 5+pos+len-1)
         str_set[index] = s
         index = index + 1
@@ -162,8 +165,12 @@ end
 
 local function build_cmd(sn, op, path)
     local pathlen = strlen(path)
-    return set_byte4(12+pathlen+1) .. set_byte4(sn)
-        .. set_byte4(op) .. set_byte4(pathlen) .. path .. '\0';
+    return set_byte4(12+pathlen+1)
+           .. set_byte4(sn)
+           .. set_byte4(op)
+           .. set_byte4(pathlen)
+           .. path
+           .. '\0';
 end
 
 function _M.get_children(self, path)
@@ -247,10 +254,19 @@ function _M.create(self, path, data, opt)
     if opt and opt[ZOO_SEQUENCE] then
         flag = bor(flag, ZOO_SEQUENCE)
     end
-    local req = set_byte4(sn) .. set_byte4(ZOO_CREATE_OP) 
-        .. set_byte4(strlen(path)) .. path .. set_byte4(strlen(data)) .. data
-        .. set_byte4(1) .. set_byte4(0x1f) .. set_byte4(strlen(acl_scheme))
-        .. acl_scheme .. set_byte4(strlen(acl_id)) .. acl_id .. set_byte4(flag)
+    local req = set_byte4(sn)
+                .. set_byte4(ZOO_CREATE_OP)
+                .. set_byte4(strlen(path))
+                .. path
+                .. set_byte4(strlen(data))
+                .. data
+                .. set_byte4(1)
+                .. set_byte4(0x1f)
+                .. set_byte4(strlen(acl_scheme))
+                .. acl_scheme
+                .. set_byte4(strlen(acl_id))
+                .. acl_id
+                .. set_byte4(flag)
     req = set_byte4(strlen(req)) .. req
     local bytes, err = sock:send(req)
     if not bytes then

@@ -1,6 +1,7 @@
 use lib '.';
 use t::TestZK 'no_plan';
 
+env_to_nginx("zk_host=10.101.14.37");
 run_tests();
 
 __DATA__
@@ -15,7 +16,7 @@ location /t {
 
         local zkc = zk.new()
 
-        local ok, err = zkc:connect("10.101.14.37", 2181)
+        local ok, err = zkc:connect(os.getenv("zk_host"), 2181)
         if ok then
             ngx.say("ok")
         else
@@ -23,8 +24,6 @@ location /t {
         end
     }
 }
---- request
-GET /t
 --- response_body
 ok
 
@@ -38,7 +37,7 @@ location /t {
 
         local zkc = zk.new()
 
-        local ok, err = zkc:connect("10.101.14.37", 2181)
+        local ok, err = zkc:connect(os.getenv("zk_host"), 2181)
         if ok then
             ngx.say("ok")
         else
@@ -52,10 +51,11 @@ location /t {
         else
             ngx.say(err)
         end
+        --for _, v in ipairs(ct) do
+        --    print(v)
+        --end
     }
 }
---- request
-GET /t
 --- response_body
 ok
 ok
@@ -70,7 +70,7 @@ location /t {
 
         local zkc = zk.new()
 
-        local ok, err = zkc:connect("10.101.14.37", 2181)
+        local ok, err = zkc:connect(os.getenv("zk_host"), 2181)
         if ok then
             ngx.say("ok")
         else
@@ -86,8 +86,6 @@ location /t {
         end
     }
 }
---- request
-GET /t
 --- response_body
 ok
 ok
@@ -102,7 +100,7 @@ location /t {
 
         local zkc = zk.new()
 
-        local ok, err = zkc:connect("10.101.14.37", 2181)
+        local ok, err = zkc:connect(os.getenv("zk_host"), 2181)
         if ok then
             ngx.say("ok")
         else
@@ -118,8 +116,6 @@ location /t {
         end
     }
 }
---- request
-GET /t
 --- response_body
 ok
 ok
@@ -134,7 +130,7 @@ location /t {
 
         local zkc = zk.new()
 
-        local ok, err = zkc:connect("10.101.14.37", 2181)
+        local ok, err = zkc:connect(os.getenv("zk_host"), 2181)
         if ok then
             ngx.say("ok")
         else
@@ -150,8 +146,6 @@ location /t {
         end
     }
 }
---- request
-GET /t
 --- response_body
 ok
 ok
@@ -168,7 +162,7 @@ location /t {
 
         local zkc = zk.new()
 
-        local ok, err = zkc:connect("10.101.14.37", 2181)
+        local ok, err = zkc:connect(os.getenv("zk_host"), 2181)
         if ok then
             ngx.say("ok")
         else
@@ -192,8 +186,6 @@ location /t {
         end
     }
 }
---- request
-GET /t
 --- response_body
 ok
 ok
@@ -211,7 +203,7 @@ location /t {
 
         local zkc = zk.new()
 
-        local ok, err = zkc:connect("10.101.14.37", 2181)
+        local ok, err = zkc:connect(os.getenv("zk_host"), 2181)
         if ok then
             ngx.say("ok")
         else
@@ -258,8 +250,6 @@ location /t {
         end
     }
 }
---- request
-GET /t
 --- response_body
 ok
 ok
